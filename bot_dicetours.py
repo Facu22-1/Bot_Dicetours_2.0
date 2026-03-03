@@ -2,6 +2,8 @@ import os
 import json
 import pytz
 from datetime import datetime
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from groq import Groq
@@ -10,12 +12,25 @@ from groq import Groq
 from busqueda_micros import buscar_opciones
 
 # ==========================================
+# --- PARCHE PARA RENDER (Web Service Gratuito) ---
+# ==========================================
+class DummyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot OK")
+
+def keep_alive():
+    # Render asigna un puerto automático o usamos el 10000 por defecto
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), DummyHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+# ==========================================
 # 1. CONFIGURACIÓN DE APIs
 # ==========================================
-# Si lo estás corriendo de prueba en la notebook, podés poner tus claves 
-# entre comillas acá temporalmente, pero ¡acordate de borrarlas antes de subir a GitHub!
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "ACA_VA_TU_TOKEN")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "ACA_VA_TU_API_KEY")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
 client = Groq(api_key=GROQ_API_KEY)
 
@@ -76,7 +91,7 @@ async def responder_consulta(update: Update, texto_usuario: str):
             recorrido_pref=recorrido_pref
         )
         
-        # El encabezado ahora incluye lo que el bot escuchó/leyó
+        # El encabezado incluye lo que el bot escuchó/leyó
         header = f"🗣️ Entendí: \"{texto_usuario.capitalize()}\"\n🗺️ Viaje: {origen} ➡️ {destino}\n⏱️ Hora de cálculo: {hora_actual}\n\n"
         cuerpo_mensaje = "\n\n➖➖➖➖➖➖➖➖➖➖\n\n".join(respuestas)
         
@@ -102,7 +117,7 @@ async def procesar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await archivo.download_to_drive(ruta_audio)
 
     try:
-        # Groq Whisper hace la magia de transcribir
+        # Groq Whisper transcribiendo
         with open(ruta_audio, "rb") as f:
             transcripcion = client.audio.transcriptions.create(
                 file=(ruta_audio, f.read()),
@@ -124,7 +139,9 @@ async def procesar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 4. ARRANQUE DEL SERVIDOR
 # ==========================================
 def main():
-    print("Iniciando Dicetours Bot con soporte de notas de voz...")
+    keep_alive()  # ¡Acá activamos el servidor web fantasma para Render!
+    
+    print("Iniciando Dicetours Bot con soporte de voz y parche para Render...")
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     
     # Le decimos que preste atención tanto a texto como a notas de voz
