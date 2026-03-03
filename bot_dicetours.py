@@ -4,7 +4,6 @@ import pytz
 from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
-import google.generativeai as genai
 from groq import Groq
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -122,4 +121,5 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
+
     main()
