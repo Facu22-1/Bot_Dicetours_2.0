@@ -1,27 +1,10 @@
-import json
 import os
+import json
 import pytz
 from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from groq import Groq
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import os
-
-# --- PARCHE PARA RENDER ---
-class DummyHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot OK")
-
-def keep_alive():
-    # Render te va a asignar un puerto automático
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(('0.0.0.0', port), DummyHandler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-# --------------------------
 
 # Importamos tu motor de búsqueda local
 from busqueda_micros import buscar_opciones
@@ -29,11 +12,11 @@ from busqueda_micros import buscar_opciones
 # ==========================================
 # 1. CONFIGURACIÓN DE APIs
 # ==========================================
-# Uso variables de entorno para no exponer las claves en el código
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+# Si lo estás corriendo de prueba en la notebook, podés poner tus claves 
+# entre comillas acá temporalmente, pero ¡acordate de borrarlas antes de subir a GitHub!
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "ACA_VA_TU_TOKEN")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "ACA_VA_TU_API_KEY")
 
-# Inicializamos el cliente de Groq
 client = Groq(api_key=GROQ_API_KEY)
 
 SYSTEM_INSTRUCTION = """
@@ -54,31 +37,25 @@ Caso 4: SALIR ALREDEDOR DE una hora. (Ej: "Salgo de cursar a las 16, qué micro 
 """
 
 # ==========================================
-# 2. LÓGICA DE RECEPCIÓN DE MENSAJES
+# 2. EL CEREBRO CENTRAL (Procesa el texto final)
 # ==========================================
-async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    mensaje_usuario = update.message.text
-    
+async def responder_consulta(update: Update, texto_usuario: str):
     tz = pytz.timezone('America/Argentina/Mendoza')
     hora_actual = datetime.now(tz).strftime("%H:%M")
     
-    await update.message.reply_text("🤖 Buscando horarios...")
-
     try:
         # Petición a la API de Groq
         chat_completion = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": SYSTEM_INSTRUCTION},
-                {"role": "user", "content": mensaje_usuario}
+                {"role": "user", "content": texto_usuario}
             ],
-            model="llama-3.1-8b-instant", # Modelo liviano y veloz de Meta
+            model="llama-3.1-8b-instant", 
             temperature=0.0,
-            response_format={"type": "json_object"} # Forzamos el JSON
+            response_format={"type": "json_object"} 
         )
         
-        # Extraemos la respuesta
-        respuesta_ia = chat_completion.choices[0].message.content
-        datos_ia = json.loads(respuesta_ia)
+        datos_ia = json.loads(chat_completion.choices[0].message.content)
         
         caso = datos_ia.get("caso")
         origen = datos_ia.get("origen")
@@ -99,27 +76,63 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
             recorrido_pref=recorrido_pref
         )
         
-        header = f"🗺️ Viaje: {origen} ➡️ {destino}\n⏱️ Hora de cálculo: {hora_actual}\n\n"
+        # El encabezado ahora incluye lo que el bot escuchó/leyó
+        header = f"🗣️ Entendí: \"{texto_usuario.capitalize()}\"\n🗺️ Viaje: {origen} ➡️ {destino}\n⏱️ Hora de cálculo: {hora_actual}\n\n"
         cuerpo_mensaje = "\n\n➖➖➖➖➖➖➖➖➖➖\n\n".join(respuestas)
-        mensaje_final = header + cuerpo_mensaje
         
-        await update.message.reply_text(mensaje_final)
+        await update.message.reply_text(header + cuerpo_mensaje)
         
     except Exception as e:
         print(f"Error interno: {e}")
         await update.message.reply_text("🚨 Che, hubo un error interno procesando los datos. Intentá de nuevo.")
 
 # ==========================================
-# 3. ARRANQUE DEL SERVIDOR
+# 3. LOS OÍDOS (Handlers de Telegram)
+# ==========================================
+async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🤖 Buscando horarios...")
+    await responder_consulta(update, update.message.text)
+
+async def procesar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🤖 Escuchando el audio...")
+    
+    # Descargamos el archivo de voz temporalmente
+    archivo = await context.bot.get_file(update.message.voice.file_id)
+    ruta_audio = "audio_temp.ogg"
+    await archivo.download_to_drive(ruta_audio)
+
+    try:
+        # Groq Whisper hace la magia de transcribir
+        with open(ruta_audio, "rb") as f:
+            transcripcion = client.audio.transcriptions.create(
+                file=(ruta_audio, f.read()),
+                model="whisper-large-v3",
+                language="es" 
+            )
+        
+        texto_hablado = transcripcion.text
+        os.remove(ruta_audio) # Limpiamos la basura
+        
+        # Le pasamos el texto limpio a nuestro cerebro central
+        await responder_consulta(update, texto_hablado)
+
+    except Exception as e:
+        print(f"Error con el audio: {e}")
+        await update.message.reply_text("🚨 No pude escuchar bien el audio. ¿Me lo escribís?")
+
+# ==========================================
+# 4. ARRANQUE DEL SERVIDOR
 # ==========================================
 def main():
-    keep_alive() # Para Render 
-    print("Iniciando servidor principal con API de Groq...")
+    print("Iniciando Dicetours Bot con soporte de notas de voz...")
     app = Application.builder().token(TELEGRAM_TOKEN).build()
+    
+    # Le decimos que preste atención tanto a texto como a notas de voz
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_mensaje))
-    print("✅ ¡Bot 100% operativo y esperando tus mensajes!")
+    app.add_handler(MessageHandler(filters.VOICE, procesar_audio))
+    
+    print("✅ ¡Bot 100% operativo escuchando y leyendo!")
     app.run_polling()
 
 if __name__ == "__main__":
-
     main()
