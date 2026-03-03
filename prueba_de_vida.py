@@ -6,8 +6,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # 1. TUS CLAVES
 # ==========================================
 # Reemplazá esto por las claves que sacaste de BotFather y AI Studio
-TELEGRAM_TOKEN = "8469178246:AAGGwrgvUOZi_eMXxZdstFLpAcEFoql_2-g"
-GEMINI_API_KEY = "AIzaSyBlULIvQo76iRZYROgrD0cT8pjqTI6sbFg"
+
 
 # ==========================================
 # 2. PRUEBA DE GEMINI
@@ -38,4 +37,5 @@ try:
     print("✅ ¡Bot online! Entrá a Telegram y mandale el comando /start")
     app.run_polling()
 except Exception as e:
+
     print(f"❌ Error conectando con Telegram: {e}")
