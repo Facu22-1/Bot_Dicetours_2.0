@@ -14,17 +14,24 @@ from busqueda_micros import buscar_opciones
 # ==========================================
 # --- PARCHE PARA RENDER (Web Service Gratuito) ---
 # ==========================================
+# --- PARCHE PARA RENDER ---
 class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
         self.end_headers()
         self.wfile.write(b"Bot OK")
+        
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
 
 def keep_alive():
-    # Render asigna un puerto automático o usamos el 10000 por defecto
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(('0.0.0.0', port), DummyHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
+# --------------------------
 
 # ==========================================
 # 1. CONFIGURACIÓN DE APIs
@@ -153,3 +160,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
